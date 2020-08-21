@@ -1,0 +1,202 @@
+apply plugin: 'java'
+apply plugin: 'maven'
+
+def parBuildDir = "par${tempBuildDir}"
+project.buildDir = "${gradleDir}"
+
+repositories {
+	maven {
+		url "${repoUrl}"
+		credentials {
+			username "${userName}"
+			password "${userPasswd}"
+			
+		}
+	}
+}
+
+configurations.all {
+	resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+	resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
+}
+
+configurations {
+	upAppJar
+	upAppPar
+	
+	downAppJar
+	downAppPar
+}
+
+dependencies {
+	compile fileTree(dir: "${bxmRuntimeLibDir}", include: '**/*')
+	compile fileTree(dir: "${libDir}", include: '**/*')
+	
+	// Write Project Dependency Information.
+
+}
+
+artifacts {
+	upAppJar file: file("${distDir}/${buildFileName}.jar")
+	upAppPar file: file("${distDir}/${buildFileName}.par")
+}
+
+sourceSets {
+	main {
+		java {
+			srcDir 'src'
+			srcDir 'src-gen'
+			
+			output.classesDir="${tempBuildDir}"
+		}
+	}
+}
+
+processResources {
+	copy {
+		from 'src', 'src-gen'
+		into "${tempBuildDir}"
+		include '**/*.dbio'
+		include '**/*.dbio'
+	}
+	copy {
+		from '.'
+		into "${tempBuildDir}"
+		include 'META-INF/**/*.xml'
+	}
+}
+
+compileJava {
+	sourceCompatibility = "${javaVersion}"
+	targetCompatibility = "${javaVersion}"
+	options.encoding="${compileEncoding}"
+}
+
+jar {
+	archiveName="${buildFileName}.jar"
+	destinationDir=file("${distDir}")
+}
+
+task CreateParTemplA(type: Copy, dependsOn: jar) {
+	from("${tempBuildDir}"){
+		include 'META-INF/**/*.xml'
+	}
+	into "${parBuildDir}"
+}
+
+task CreateParTemplB(type: Copy, dependsOn: CreateParTemplA) {
+	from("${tempBuildDir}"){
+		exclude 'META-INF'
+	}
+	into "${parBuildDir}/classes"
+}
+
+task par(type: Jar, dependsOn: CreateParTemplB) {
+	archiveName="${buildFileName}.par"
+	from "${parBuildDir}"
+	destinationDir=file("${distDir}")
+}
+
+task BXMBuild (dependsOn: 'par') << {
+}
+
+uploadUpAppJar {
+	repositories {
+		mavenDeployer {
+			repository(url: "${repoUrl}") {
+				authentication(userName: "${userName}", password: "${userPasswd}")
+			}
+			pom.version="${version}"
+			pom.artifactId="${buildFileName}"
+			pom.groupId="${jarGroup}"
+		}
+	}
+}
+
+uploadUpAppPar {
+	repositories {
+		mavenDeployer {
+			repository(url: "${repoUrl}") {
+				authentication(userName: "${userName}", password: "${userPasswd}")
+			}
+			pom.version="${version}"
+			pom.artifactId="${buildFileName}"
+			pom.groupId="${parGroup}"
+		}
+	}
+}
+
+task BXMDeploy(dependsOn: par) << {
+	uploadUpAppJar.execute();
+	uploadUpAppPar.execute();
+}
+
+def removeVersion(String, Boolean) {
+	def start=0
+	def end=0
+	
+	for(int i=0; i<String.length(); i++) {
+		if(String.charAt(i) == '-' && String.charAt(i+1).toString().isNumber()) {
+			start=i
+		}
+		if(String.charAt(i) == '.') {
+			end=i
+		}
+	}
+	if(Boolean) {
+		return String.replace(String.substring(start,end), '')
+	} else {
+		return String.substring(0, start)
+	}
+}
+
+task BXMJarDownload(type: Copy) {
+	from configurations.downAppJar {
+		exclude '**/*.par'
+	}
+	into "${libDir}"
+	rename { String fileName ->
+		fileName = removeVersion(fileName, true)
+	}
+}
+
+task BXMParDownload(type: Copy) {
+	from configurations.downAppPar {
+		include '**/*.par'
+	}
+	into "${appHome}"
+	rename { String fileName ->
+		fileName = removeVersion(fileName, true)
+	}
+}
+
+task BXMParDownloadAndExtract << {
+	configurations.downAppPar.collect {
+		InternalProcess(it)
+	}
+}
+
+def InternalProcess(def file) {
+	copy {
+		from {
+			zipTree(file)
+		}
+		into "${appHome}/" + removeVersion(file.name, false)
+	}
+}
+
+task BXMDownload << {
+	BXMJarDownload.execute()
+	BXMParDownload.execute()
+}
+
+task BXMDownloadAndExtract << {
+	BXMJarDownload.execute()
+	BXMParDownloadAndExtract.execute()
+}
+
+// 전후 수행되어야 할 task
+task BXMClean(type: Delete) {
+	delete "${tempBuildDir}"
+	delete "${parBuildDir}"
+}
