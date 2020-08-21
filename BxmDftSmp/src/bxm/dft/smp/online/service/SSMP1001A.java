@@ -88,6 +88,7 @@ public class SSMP1001A {
 		 * @Desc DTO mapping if bean out is not null
 		 */
 		if (beanOutput != null) {
+			//testesetest
 			output.setFeduEmpNo(beanOutput.getFeduEmpNo());
 			output.setFeduEmpNm(beanOutput.getFeduEmpNm());
 			output.setFeduOccpNm(beanOutput.getFeduOccpNm());
